@@ -180,6 +180,65 @@ docker run --rm -p 8000:8000 satvex
 
 The container port and required environment variables must match the actual application configuration. If the container does not listen on port `8000`, adjust the mapping based on the Dockerfile and startup logs.
 
+## Production deployment (Render & Custom Domain)
+
+### Architecture
+SAT-VEX is a full-stack Django application that handles both dynamic HTML views (powered by CesiumJS on the frontend) and JSON API endpoints. A separate API service is **not** required because the existing Django application serves both the interactive frontend views and API routes from a unified service. 
+
+- **Frontend Domain:** `https://satvex.deepaksinghdev.in`
+- **Optional API Domain:** `https://satvex-api.deepaksinghdev.in` (Can point as an alias or custom domain to the same Render service)
+
+> **Note on Vercel:** Vercel is designed for static frontends or JavaScript/serverless runtimes. Because SAT-VEX is a stateful Python/Django web application with WhiteNoise static asset serving, SGP4/Skyfield orbital calculation backends, and SQLite/PostgreSQL database connections, the Render/Docker architecture is the native and optimal deployment platform.
+
+### Required Environment Variables
+Configure these variables in your Render service dashboard (under **Environment**):
+
+| Variable | Description | Example / Recommended Value |
+|---|---|---|
+| `DEBUG` | Disables debug mode in production | `False` |
+| `SECRET_KEY` | Strong, unique Django secret key | Generate a secure 50+ character random string |
+| `ALLOWED_HOSTS` | Comma-separated list of allowed hostnames | `satvex.deepaksinghdev.in,satvex-api.deepaksinghdev.in,.onrender.com,localhost,127.0.0.1` |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated list of trusted origins with https scheme | `https://satvex.deepaksinghdev.in,https://satvex-api.deepaksinghdev.in,https://*.onrender.com` |
+| `DATABASE_URL` | *(Optional)* PostgreSQL connection string | `postgres://user:password@host:5432/dbname` (Defaults to local SQLite if omitted) |
+| `N2YO_API_KEY` | *(Optional)* API key for live N2YO satellite TLE fetching | Your N2YO API key |
+| `PORT` | Auto-provided by Render (defaults to `8000`) | `8000` |
+
+### Render Service Configuration
+- **Environment:** Docker
+- **Build Command:** Built automatically via `Dockerfile`
+- **Start Command:** Automatically executes `ENTRYPOINT ["/app/docker-entrypoint.sh"]` running `makemigrations`, `migrate`, `collectstatic`, and `gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 120`
+- **Health Check Path:** `/healthz`
+
+### Persistent Storage & Data Strategy
+- In containerized environments (like Render Free/Standard without persistent disks), the local filesystem is ephemeral across deploys.
+- For production persistence of user-created satellites or TLE histories:
+  1. Attach a **Render PostgreSQL database** and set the `DATABASE_URL` environment variable.
+  2. Or attach a **Render Persistent Disk** mounted at `/app` if relying on SQLite.
+- Scheduled updates (like `tools/` scripts) should be run as independent Render Cron Jobs rather than inside multiple parallel web workers to prevent duplicate data-fetching calls or race conditions.
+
+### DNS Setup (GoDaddy)
+In your GoDaddy DNS Management console for `deepaksinghdev.in`:
+1. Find your Render service URL (e.g., `satvex.onrender.com` found in Render dashboard -> Settings -> Custom Domains).
+2. Add a **CNAME** record:
+   - **Type:** `CNAME`
+   - **Name / Host:** `satvex`
+   - **Value / Target:** `<your-render-service-subdomain>.onrender.com` (copy exact target shown in Render custom domain modal)
+   - **TTL:** 1 Hour (or 600 seconds)
+3. *(Optional for API domain)*:
+   - **Type:** `CNAME`
+   - **Name / Host:** `satvex-api`
+   - **Value / Target:** `<your-render-service-subdomain>.onrender.com`
+   - **TTL:** 1 Hour
+
+### Smoke Testing
+Run the automated route verification script locally or in staging:
+```bash
+python tools/smoke_test.py
+# Or against production:
+BASE_URL=https://satvex.deepaksinghdev.in python tools/smoke_test.py
+```
+
+
 ## Data sources and accuracy
 
 SAT-VEX relies on orbital element data and the calculations implemented in the repository.

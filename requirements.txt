@@ -15,3 +15,4 @@ gunicorn
 django-crontab
 Pillow>=10.0.0
 whitenoise
+django-cors-headers

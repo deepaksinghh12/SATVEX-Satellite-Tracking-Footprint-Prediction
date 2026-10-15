@@ -1,25 +1,68 @@
 """
-Django settings for config project.
-Local demo configuration (NO Render).
+Django settings for SatVex project.
+Production and Local deployment configuration.
 """
 
 from pathlib import Path
+import os
+import dj_database_url
+from dotenv import load_dotenv
 
 # ========================
-# BASE DIR
+# BASE DIR & ENV LOADING
 # ========================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load .env if present
+load_dotenv(BASE_DIR / ".env")
+
 # ========================
-# SECURITY (LOCAL ONLY)
+# SECURITY & SECRETS
 # ========================
 
-SECRET_KEY = "django-insecure-local-demo-key"
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-dev-key-change-in-production-satvex-2026"
+)
 
-DEBUG = True
+DEBUG = os.environ.get("DEBUG", "False").lower() in ("true", "1", "t", "yes")
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
+# Allowed Hosts
+# In production, specify: satvex.deepaksinghdev.in, .onrender.com, etc.
+raw_allowed_hosts = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1,satvex.deepaksinghdev.in,satvex-api.deepaksinghdev.in,.onrender.com")
+ALLOWED_HOSTS = [h.strip() for h in raw_allowed_hosts.split(",") if h.strip()]
+
+# CSRF Trusted Origins
+raw_csrf_origins = os.environ.get(
+    "CSRF_TRUSTED_ORIGINS",
+    "https://satvex.deepaksinghdev.in,https://satvex-api.deepaksinghdev.in,https://*.onrender.com"
+)
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in raw_csrf_origins.split(",") if o.strip()]
+
+# Reverse Proxy / HTTPS detection (Render terminates SSL at edge)
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+else:
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+
+# CORS & CSRF Origins for Vercel Frontend
+raw_cors_origins = os.environ.get(
+    "CORS_ALLOWED_ORIGINS",
+    "https://satvex.deepaksinghdev.in"
+)
+CORS_ALLOWED_ORIGINS = [o.strip() for o in raw_cors_origins.split(",") if o.strip()]
+CORS_ALLOW_CREDENTIALS = True
+
+# External N2YO API Key
+N2YO_API_KEY = os.environ.get("N2YO_API_KEY", "M8PZCZ-5ELM7M-DE5LRK-531A")
 
 # ========================
 # APPLICATION DEFINITION
@@ -31,7 +74,9 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
+    "whitenoise.runserver_nostatic",
     "django.contrib.staticfiles",
+    "corsheaders",
 
     # Local apps
     "satTrack",
@@ -39,14 +84,16 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    # ❌ WhiteNoise REMOVED for local demo
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
 
 ROOT_URLCONF = "config.urls"
 
@@ -69,15 +116,25 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ========================
-# DATABASE (LOCAL SQLITE)
+# DATABASE
 # ========================
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=database_url,
+            conn_max_age=600,
+            conn_health_checks=True
+        )
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # ========================
 # PASSWORD VALIDATION
@@ -100,20 +157,32 @@ USE_I18N = True
 USE_TZ = True
 
 # ========================
-# STATIC FILES (LOCAL)
+# STATIC & MEDIA FILES
 # ========================
 
 STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 STATICFILES_DIRS = [
     BASE_DIR / "static",
 ]
 
-# ❌ STATIC_ROOT NOT REQUIRED LOCALLY
-# ❌ STATICFILES_STORAGE NOT REQUIRED LOCALLY
+# WhiteNoise storage for compressed and cached static files
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # ========================
 # DEFAULT PRIMARY KEY
 # ========================
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+

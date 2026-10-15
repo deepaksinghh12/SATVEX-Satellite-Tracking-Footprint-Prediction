@@ -1,18 +1,23 @@
+import os
 from django.db import models
+from django.conf import settings
 
 # Create your models here.
 from datetime import datetime, timedelta
 import requests
 
-api_key = 'M8PZCZ-5ELM7M-DE5LRK-531A'
 API_URL = 'https://api.n2yo.com/rest/v1/satellite/'
-params = {'apiKey': api_key}
+
+def get_n2yo_api_key():
+    return getattr(settings, 'N2YO_API_KEY', os.environ.get('N2YO_API_KEY', 'M8PZCZ-5ELM7M-DE5LRK-531A'))
 
 def get_tle_from_n2yo(id):
+    params = {'apiKey': get_n2yo_api_key()}
     r = requests.get(
         f'{API_URL}tle/{id}',
         params=params
     ).json()
+
     last_tle_update = datetime.now().date()
     print(r)
     return (r['tle'])
